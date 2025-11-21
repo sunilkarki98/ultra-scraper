@@ -7,14 +7,18 @@ const configSchema = z.object({
   port: z.coerce.number().default(3000),
   env: z.enum(["development", "production", "test"]).default("development"),
   logLevel: z.string().default("info"),
+
   redis: z.object({
-    host: z.string().default("localhost"),
+    // PRIORITY 1 → Railway Redis URL
+    url: z.string().optional(),
+
+    // PRIORITY 2 → Manual Host/Port
+    host: z.string().default("127.0.0.1"),
     port: z.coerce.number().default(6379),
-    // PASSWORD is often needed for Railway/Cloud Redis
     password: z.string().optional(),
   }),
+
   scraping: z.object({
-    // FIXED: Added proxies definition here
     proxies: z.string().optional(),
     headless: z.coerce.boolean().default(true),
     concurrency: z.coerce.number().default(3),
@@ -26,12 +30,12 @@ export default configSchema.parse({
   env: process.env.NODE_ENV,
   logLevel: process.env.LOG_LEVEL,
   redis: {
-    host: process.env.REDIS_HOST,
+    url: process.env.REDIS_URL, // <-- Railway env
+    host: process.env.REDIS_HOST, // <-- Manual config
     port: process.env.REDIS_PORT,
-    password: process.env.REDIS_PASSWORD, // Pass password too
+    password: process.env.REDIS_PASSWORD,
   },
   scraping: {
-    // FIXED: Moved proxies here where it belongs
     proxies: process.env.PROXY_LIST,
     headless: process.env.HEADLESS,
     concurrency: process.env.CONCURRENCY,

@@ -1,16 +1,23 @@
-// FILE: src/jobs/queue.ts
 import { Queue, Worker, Job } from "bullmq";
-import { redis } from "../utils/redis";
 import { logger } from "../utils/logger";
 import config from "../config";
 import { ExampleSiteScraper } from "../scrapers/exampleSiteScraper";
 
-// 1. Define the Queue (Producer side)
+// BullMQ connection config
+const connection = process.env.REDIS_URL
+  ? { connectionString: process.env.REDIS_URL } // Railway
+  : {
+      host: process.env.REDIS_HOST || "127.0.0.1",
+      port: Number(process.env.REDIS_PORT) || 6379,
+      password: process.env.REDIS_PASSWORD || undefined,
+    };
+
+// 1. Define Queue
 export const scrapeQueue = new Queue("scrape-queue", {
-  connection: redis,
+  connection,
   defaultJobOptions: {
-    removeOnComplete: 100, // Keep last 100 completed jobs in Redis
-    removeOnFail: 500, // Keep last 500 failed jobs for debugging
+    removeOnComplete: 100,
+    removeOnFail: 500,
     attempts: 3,
     backoff: {
       type: "exponential",
@@ -19,8 +26,7 @@ export const scrapeQueue = new Queue("scrape-queue", {
   },
 });
 
-// 2. Define the Worker (Consumer side)
-// This runs in the background and processes jobs one by one (or concurrently)
+// 2. Worker
 const worker = new Worker(
   "scrape-queue",
   async (job: Job) => {
@@ -32,60 +38,60 @@ const worker = new Worker(
     try {
       let result;
 
-      // Scraper Factory: Select the right scraper based on job type
       switch (type) {
         case "example":
           const scraper = new ExampleSiteScraper();
           result = await scraper.run(url);
           break;
 
-        // Add more cases here for different sites:
-        // case 'amazon':
-        //   result = await new AmazonScraper().run(url);
-        //   break;
-
         default:
           throw new Error(`Unknown scraper type: ${type}`);
       }
 
-      // Cache successful results in Redis (Optional, but recommended)
-      // This allows the API to serve this data instantly next time
       if (result.success) {
         const cacheKey = `scrape:${url}`;
-        await redis.set(cacheKey, JSON.stringify(result), "EX", 3600); // Expire in 1 hour
+        // Store using a new redis client inside Worker
+        const Redis = require("ioredis");
+        const redisClient = process.env.REDIS_URL
+          ? new Redis(process.env.REDIS_URL)
+          : new Redis({
+              host: process.env.REDIS_HOST || "127.0.0.1",
+              port: Number(process.env.REDIS_PORT) || 6379,
+              password: process.env.REDIS_PASSWORD || undefined,
+            });
+
+        await redisClient.set(cacheKey, JSON.stringify(result), "EX", 3600);
+        redisClient.quit();
       }
 
       logger.info(logMeta, "✅ Job completed successfully");
       return result;
     } catch (error: any) {
       logger.error({ ...logMeta, err: error.message }, "❌ Job failed");
-      throw error; // Throwing triggers BullMQ's retry mechanism
+      throw error;
     }
   },
   {
-    connection: redis,
-    concurrency: config.scraping.concurrency, // Controlled by .env (e.g., 3)
+    connection,
+    concurrency: config.scraping.concurrency,
     limiter: {
-      max: 10, // Rate Limit: Max 10 jobs...
-      duration: 1000, // ...per 1 second
+      max: 10,
+      duration: 1000,
     },
   }
 );
 
-// Worker Event Listeners
+// Worker Events
 worker.on("failed", (job, err) => {
   logger.error({ jobId: job?.id, err: err.message }, "Worker error");
 });
 
 worker.on("error", (err) => {
-  // Connection errors (Redis down, etc)
   logger.error({ err }, "Worker connection error");
 });
 
+// Add job helper
 export const addScrapeJob = async (url: string, type: string = "example") => {
-  // We use the URL as a deterministic ID to prevent duplicates in the queue
-  // if the user spams the button.
   const jobId = Buffer.from(url).toString("base64");
-
   return await scrapeQueue.add("scrape", { url, type }, { jobId });
 };
