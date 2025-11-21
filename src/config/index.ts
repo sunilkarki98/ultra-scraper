@@ -10,8 +10,12 @@ const configSchema = z.object({
   redis: z.object({
     host: z.string().default("localhost"),
     port: z.coerce.number().default(6379),
+    // PASSWORD is often needed for Railway/Cloud Redis
+    password: z.string().optional(),
   }),
   scraping: z.object({
+    // FIXED: Added proxies definition here
+    proxies: z.string().optional(),
     headless: z.coerce.boolean().default(true),
     concurrency: z.coerce.number().default(3),
   }),
@@ -22,11 +26,13 @@ export default configSchema.parse({
   env: process.env.NODE_ENV,
   logLevel: process.env.LOG_LEVEL,
   redis: {
-    proxies: process.env.PROXY_LIST,
     host: process.env.REDIS_HOST,
     port: process.env.REDIS_PORT,
+    password: process.env.REDIS_PASSWORD, // Pass password too
   },
   scraping: {
+    // FIXED: Moved proxies here where it belongs
+    proxies: process.env.PROXY_LIST,
     headless: process.env.HEADLESS,
     concurrency: process.env.CONCURRENCY,
   },
