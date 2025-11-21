@@ -20,6 +20,10 @@ const configSchema = z.object({
     // Safety: Default to 1 or 2. Higher values will crash Railway Starter/Hobby plans.
     concurrency: z.coerce.number().default(2),
   }),
+
+  logLevel: z
+    .enum(["trace", "debug", "info", "warn", "error", "fatal"])
+    .default((process.env.LOG_LEVEL as any) || "info"), // <-- Add logLevel
 });
 
 const parsed = configSchema.parse({
@@ -35,6 +39,7 @@ const parsed = configSchema.parse({
     headless: process.env.HEADLESS,
     concurrency: process.env.CONCURRENCY,
   },
+  logLevel: process.env.LOG_LEVEL,
 });
 
 // Force headless true if in production (Safety Override)
