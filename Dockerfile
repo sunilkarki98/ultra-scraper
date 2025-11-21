@@ -1,5 +1,5 @@
-# Use official Playwright image to ensure browser deps are present
-FROM mcr.microsoft.com/playwright:v1.49.0-jammy
+# FIXED: Updated version to match your package.json (1.56.1)
+FROM mcr.microsoft.com/playwright:v1.56.1-jammy
 
 # Set working directory
 WORKDIR /app
@@ -16,17 +16,10 @@ COPY . .
 # Build TypeScript
 RUN npm run build
 
-# Remove dev dependencies to slim down (optional, but safe in Node)
-# RUN npm prune --production 
-
-# Create non-root user (Playwright image has 'pwuser', usually)
-# But we will run as root inside container to avoid permission headaches with Puppeteer/Playwright
-# unless specifically configured for user-space.
-# For best security, map to a specific user in docker-compose or k8s.
-
+# Set Environment
 ENV NODE_ENV=production
 
-# Expose API port
+# Expose API port (Documentation only for Railway)
 EXPOSE 3000
 
 # Start command
