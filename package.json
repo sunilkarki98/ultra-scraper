@@ -1,12 +1,11 @@
 {
   "name": "ultra-scraper",
   "version": "1.0.0",
-  "description": "Production-ready Playwright scraping service",
+  "description": "Playwright scraping service",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "start": "dist/index.js",
-    "main": "dist/index.js",
+    "start": "node dist/index.js",
     "dev": "nodemon --exec ts-node src/index.ts",
     "lint": "eslint . --ext .ts",
     "format": "prettier --write .",
