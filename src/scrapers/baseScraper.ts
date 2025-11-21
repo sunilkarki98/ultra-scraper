@@ -1,10 +1,11 @@
 // FILE: src/scrapers/baseScraper.ts
 import { BrowserContext, Page } from "playwright";
 import { BrowserManager } from "../browser/playright";
+import { ScrapeOptions } from "./universalScraper";
 
-export interface ScrapeResult {
+export interface ScrapeResult<T = any> {
   success: boolean;
-  data?: any;
+  data?: T;
   error?: string;
   metadata?: {
     url: string;
@@ -13,55 +14,48 @@ export interface ScrapeResult {
   };
 }
 
-export abstract class BaseScraper {
+export abstract class BaseScraper<T = any> {
   protected page: Page | null = null;
   protected context: BrowserContext | null = null;
 
-  /**
-   * The main entry point. Manages the browser lifecycle.
-   */
-  async run(url: string): Promise<ScrapeResult> {
+  // Main entry point: accepts ScrapeOptions
+  async run(options: ScrapeOptions): Promise<ScrapeResult<T>> {
+    const { url, proxy, userAgent, mobile } = options;
     try {
-      // 1. Launch (or reuse) browser context
-      const { context, page } = await BrowserManager.launchContext();
+      const { context, page } = await BrowserManager.launchContext({
+        proxy,
+        userAgent,
+        mobile,
+      });
       this.context = context;
       this.page = page;
 
-      // 2. Execute specific scraping logic
-      const data = await this.scrape(url);
+      const data = await this.scrape(options);
 
-      // 3. Return success
       return {
         success: true,
         data,
         metadata: {
           url,
           timestamp: new Date().toISOString(),
+          proxyUsed: proxy,
         },
       };
-    } catch (error: any) {
-      // 4. Handle errors
-      // Snapshot error for debugging? (Optional)
-      // if (this.page) await this.page.screenshot({ path: `error-${Date.now()}.png` });
-
+    } catch (err: any) {
       return {
         success: false,
-        error: error.message,
+        error: err.message,
         metadata: {
           url,
           timestamp: new Date().toISOString(),
+          proxyUsed: proxy,
         },
       };
     } finally {
-      // 5. Cleanup: ALWAYS close the context/page to free memory
-      if (this.context) {
-        await BrowserManager.closeContext(this.context);
-      }
+      if (this.context) await BrowserManager.closeContext(this.context);
     }
   }
 
-  /**
-   * Abstract method: Must be implemented by child classes
-   */
-  protected abstract scrape(url: string): Promise<any>;
+  // Must be implemented by child scrapers
+  protected abstract scrape(options: ScrapeOptions): Promise<T>;
 }
