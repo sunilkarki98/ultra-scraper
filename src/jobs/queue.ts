@@ -2,19 +2,13 @@ import { Queue, Worker, Job } from "bullmq";
 import { logger } from "../utils/logger";
 import config from "../config";
 import { ExampleSiteScraper } from "../scrapers/exampleSiteScraper";
-
-// BullMQ connection config
-const connection = process.env.REDIS_URL
-  ? { connectionString: process.env.REDIS_URL } // Railway
-  : {
-      host: process.env.REDIS_HOST || "127.0.0.1",
-      port: Number(process.env.REDIS_PORT) || 6379,
-      password: process.env.REDIS_PASSWORD || undefined,
-    };
+// ✅ Import the configured connection we fixed earlier
+import { redis } from "../utils/redis";
 
 // 1. Define Queue
+// We pass the imported 'redis' instance directly to 'connection'
 export const scrapeQueue = new Queue("scrape-queue", {
-  connection,
+  connection: redis,
   defaultJobOptions: {
     removeOnComplete: 100,
     removeOnFail: 500,
@@ -50,18 +44,11 @@ const worker = new Worker(
 
       if (result.success) {
         const cacheKey = `scrape:${url}`;
-        // Store using a new redis client inside Worker
-        const Redis = require("ioredis");
-        const redisClient = process.env.REDIS_URL
-          ? new Redis(process.env.REDIS_URL)
-          : new Redis({
-              host: process.env.REDIS_HOST || "127.0.0.1",
-              port: Number(process.env.REDIS_PORT) || 6379,
-              password: process.env.REDIS_PASSWORD || undefined,
-            });
 
-        await redisClient.set(cacheKey, JSON.stringify(result), "EX", 3600);
-        redisClient.quit();
+        // ✅ FIX: Don't create a new Redis client here.
+        // Reuse the imported 'redis' instance.
+        // This is faster and prevents connection leaks.
+        await redis.set(cacheKey, JSON.stringify(result), "EX", 3600);
       }
 
       logger.info(logMeta, "✅ Job completed successfully");
@@ -72,7 +59,8 @@ const worker = new Worker(
     }
   },
   {
-    connection,
+    // ✅ Use the shared connection here too
+    connection: redis,
     concurrency: config.scraping.concurrency,
     limiter: {
       max: 10,
