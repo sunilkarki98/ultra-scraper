@@ -10,6 +10,7 @@
     "lint": "eslint . --ext .ts",
     "format": "prettier --write .",
     "test": "jest",
+    "postinstall": "playwright install chromium",
     "test:integration": "jest -c jest.integration.config.js"
   },
   "dependencies": {

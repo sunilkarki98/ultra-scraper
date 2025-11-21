@@ -1,18 +1,23 @@
-// FILE: src/browser/playwright.ts
 import { Browser, BrowserContext, Page } from "playwright";
 import { stealthChromium } from "./stealth";
-import config from "../config";
+import config from "../config"; // <--- Now actually used
 import { logger } from "../utils/logger";
-import { getNextProxy } from "../utils/proxy"; // <--- 1. Import this
+import { getNextProxy } from "../utils/proxy";
 
 let globalBrowser: Browser | null = null;
 
 export class BrowserManager {
   static async init() {
-    /* ... (Keep existing init code) ... */
-    if (globalBrowser) return;
+    if (globalBrowser && globalBrowser.isConnected()) return;
+
+    // Safety: Force headless on Railway/Production to prevent crashes
+    const isProduction = process.env.NODE_ENV === "production";
+    const useHeadless = isProduction ? true : config.scraping.headless;
+
+    logger.info(`🚀 Launching Stealth Chromium (Headless: ${useHeadless})...`);
+
     globalBrowser = await stealthChromium.launch({
-      headless: config.scraping.headless,
+      headless: useHeadless,
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",
@@ -20,6 +25,7 @@ export class BrowserManager {
         "--disable-accelerated-2d-canvas",
         "--disable-gpu",
         "--mute-audio",
+        "--window-size=1920,1080",
       ],
     });
   }
@@ -28,46 +34,44 @@ export class BrowserManager {
     context: BrowserContext;
     page: Page;
   }> {
-    if (!globalBrowser) await this.init();
-
-    // 2. Get the next proxy from the rotator
-    const proxyUrl = getNextProxy();
-
-    if (proxyUrl) {
-      logger.debug({ proxy: proxyUrl }, "Using Proxy for this job");
+    if (!globalBrowser || !globalBrowser.isConnected()) {
+      await this.init();
     }
 
-    // 3. Apply proxy to the context options
+    const proxyUrl = getNextProxy();
+    if (proxyUrl) {
+      logger.debug({ proxy: proxyUrl }, "Using Proxy");
+    }
+
     const contextOptions: any = {
       userAgent:
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       viewport: { width: 1920, height: 1080 },
       deviceScaleFactor: 1,
       locale: "en-US",
+      ...(proxyUrl ? { proxy: { server: proxyUrl } } : {}),
     };
-
-    // Add proxy if it exists
-    if (proxyUrl) {
-      contextOptions.proxy = { server: proxyUrl };
-    }
 
     const context = await globalBrowser!.newContext(contextOptions);
     const page = await context.newPage();
 
-    // ... (Keep existing resource blocking code) ...
+    // Resource Blocking (Optimized for Railway RAM)
+    await page.route("**/*", (route) => {
+      const type = route.request().resourceType();
+      const blockedTypes = ["image", "font", "stylesheet", "media", "other"];
+      if (blockedTypes.includes(type)) {
+        return route.abort();
+      }
+      return route.continue();
+    });
 
     return { context, page };
   }
-  /**
-   * Closes the context (tab) but keeps the browser running.
-   */
+
   static async closeContext(context: BrowserContext) {
     if (context) await context.close();
   }
 
-  /**
-   * Full shutdown (for server termination)
-   */
   static async closeBrowser() {
     if (globalBrowser) {
       await globalBrowser.close();

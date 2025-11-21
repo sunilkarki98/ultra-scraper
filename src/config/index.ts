@@ -21,7 +21,7 @@ const configSchema = z.object({
   scraping: z.object({
     proxies: z.string().optional(),
     headless: z.coerce.boolean().default(true),
-    concurrency: z.coerce.number().default(3),
+    concurrency: z.coerce.number().default(1),
   }),
 });
 

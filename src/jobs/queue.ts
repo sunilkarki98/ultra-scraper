@@ -1,18 +1,19 @@
 import { Queue, Worker, Job } from "bullmq";
 import { logger } from "../utils/logger";
 import config from "../config";
+import { redis } from "../utils/redis"; // Shared Redis connection
+
+// Scrapers
 import { ExampleSiteScraper } from "../scrapers/exampleSiteScraper";
-// ✅ Import the configured connection we fixed earlier
-import { redis } from "../utils/redis";
+import { UniversalScraper } from "../scrapers/universalScraper"; // <--- 1. Import new scraper
 
 // 1. Define Queue
-// We pass the imported 'redis' instance directly to 'connection'
 export const scrapeQueue = new Queue("scrape-queue", {
   connection: redis,
   defaultJobOptions: {
     removeOnComplete: 100,
     removeOnFail: 500,
-    attempts: 3,
+    attempts: 2, // Reduced to 2 for Playwright (save resources)
     backoff: {
       type: "exponential",
       delay: 2000,
@@ -32,36 +33,51 @@ const worker = new Worker(
     try {
       let result;
 
+      // 2. Switch based on type (default to universal)
       switch (type) {
+        case "universal":
+          const uniScraper = new UniversalScraper();
+          result = await uniScraper.run(url);
+          break;
+
         case "example":
-          const scraper = new ExampleSiteScraper();
-          result = await scraper.run(url);
+          const exScraper = new ExampleSiteScraper();
+          result = await exScraper.run(url);
           break;
 
         default:
-          throw new Error(`Unknown scraper type: ${type}`);
+          // Fallback to universal if unknown
+          const defaultScraper = new UniversalScraper();
+          result = await defaultScraper.run(url);
+          break;
       }
 
-      if (result.success) {
+      // 3. Handle Result & Cache
+      if (result && result.success) {
         const cacheKey = `scrape:${url}`;
 
-        // ✅ FIX: Don't create a new Redis client here.
-        // Reuse the imported 'redis' instance.
-        // This is faster and prevents connection leaks.
-        await redis.set(cacheKey, JSON.stringify(result), "EX", 3600);
+        // Optimization: Cache result.data (clean JSON) instead of the full wrapper
+        const payload = result.data;
+
+        await redis.set(cacheKey, JSON.stringify(payload), "EX", 3600);
+
+        logger.info(logMeta, "✅ Job completed & Cached");
+
+        // Return the clean data so the API gets it via job.waitUntilFinished()
+        return payload;
       }
 
-      logger.info(logMeta, "✅ Job completed successfully");
-      return result;
+      throw new Error("Scraper completed but returned no data");
     } catch (error: any) {
       logger.error({ ...logMeta, err: error.message }, "❌ Job failed");
       throw error;
     }
   },
   {
-    // ✅ Use the shared connection here too
     connection: redis,
-    concurrency: config.scraping.concurrency,
+    // Warning: Keep this low (1 or 2) on Railway Starter/Hobby plans
+    // Playwright uses a lot of RAM.
+    concurrency: config.scraping.concurrency || 2,
     limiter: {
       max: 10,
       duration: 1000,
@@ -79,7 +95,9 @@ worker.on("error", (err) => {
 });
 
 // Add job helper
-export const addScrapeJob = async (url: string, type: string = "example") => {
+// Changed default type to "universal"
+export const addScrapeJob = async (url: string, type: string = "universal") => {
+  // Use Base64 of URL as ID to prevent duplicate jobs for the same URL
   const jobId = Buffer.from(url).toString("base64");
   return await scrapeQueue.add("scrape", { url, type }, { jobId });
 };
