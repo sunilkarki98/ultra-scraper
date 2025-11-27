@@ -1,0 +1,13 @@
+{
+    "name": "ultra-scraper-frontend",
+    "version": "2.0.0",
+    "description": "Ultra-Scraper Frontend Dashboards",
+    "scripts": {
+        "dev": "npx http-server -p 3001 -c-1",
+        "build": "echo 'Frontend uses static HTML - no build needed'",
+        "serve": "npx http-server dist -p 3001"
+    },
+    "devDependencies": {
+        "http-server": "^14.1.1"
+    }
+}
