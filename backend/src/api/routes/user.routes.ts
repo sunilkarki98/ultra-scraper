@@ -1,7 +1,7 @@
 // FILE: src/api/routes/user.routes.ts
 import { Router } from 'express';
 import { UserService } from '../../services/user.service';
-import { authenticateAPIKey } from '../../middlewares/auth.middleware';
+import { authenticateAPIKey, authenticateJWT } from '../../middlewares/auth.middleware';
 import { PLAN_LIMITS, Plan } from '../../types/auth.types';
 
 const router = Router();
@@ -11,10 +11,10 @@ const router = Router();
  */
 router.post('/register', async (req, res) => {
     try {
-        const { email, name } = req.body;
+        const { email, password, name } = req.body;
 
-        if (!email) {
-            return res.status(400).json({ error: 'Email is required' });
+        if (!email || !password) {
+            return res.status(400).json({ error: 'Email and password are required' });
         }
 
         // Check if user exists
@@ -24,10 +24,13 @@ router.post('/register', async (req, res) => {
         }
 
         // Create user
-        const user = await UserService.createUser(email, name);
+        const user = await UserService.createUser(email, password, name);
 
         // Create first API key
         const apiKey = await UserService.createApiKey(user.id, 'Default Key');
+
+        // Auto-login
+        const login = await UserService.login(email, password);
 
         res.status(201).json({
             success: true,
@@ -36,12 +39,46 @@ router.post('/register', async (req, res) => {
                 email: user.email,
                 name: user.name,
                 plan: user.plan,
+                role: user.role,
             },
+            token: login?.token,
             apiKey: {
                 key: apiKey.key,
                 name: apiKey.name,
             },
-            message: 'User created successfully. Save your API key - it won\'t be shown again!',
+            message: 'User created successfully.',
+        });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * Login user (public)
+ */
+router.post('/login', async (req, res) => {
+    try {
+        const { email, password } = req.body;
+
+        if (!email || !password) {
+            return res.status(400).json({ error: 'Email and password are required' });
+        }
+
+        const result = await UserService.login(email, password);
+        if (!result) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+
+        res.json({
+            success: true,
+            user: {
+                id: result.user.id,
+                email: result.user.email,
+                name: result.user.name,
+                plan: result.user.plan,
+                role: result.user.role,
+            },
+            token: result.token,
         });
     } catch (error: any) {
         res.status(500).json({ error: error.message });
@@ -51,7 +88,7 @@ router.post('/register', async (req, res) => {
 /**
  * Get current user info (protected)
  */
-router.get('/me', authenticateAPIKey, async (req, res) => {
+router.get('/me', authenticateJWT, async (req, res) => {
     try {
         const usage = await UserService.getUsage(req.user.id);
         const limits = PLAN_LIMITS[req.user.plan as Plan];

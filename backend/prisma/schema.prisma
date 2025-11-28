@@ -1,0 +1,50 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  name         String?
+  passwordHash String?
+  role         String   @default("user") // "admin" | "user"
+  plan         String   @default("free")
+  status       String   @default("active")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  apiKeys      ApiKey[]
+  usage        Usage[]
+}
+
+model ApiKey {
+  id         String   @id @default(uuid())
+  key        String   @unique
+  name       String
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  lastUsedAt DateTime?
+  createdAt  DateTime @default(now())
+  isActive   Boolean  @default(true)
+}
+
+model Usage {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  month         String   // Format "YYYY-MM"
+  pagesScraped  Int      @default(0)
+  aiExtractions Int      @default(0)
+  apiCalls      Int      @default(0)
+  bandwidthMB   Float    @default(0)
+
+  @@unique([userId, month])
+}

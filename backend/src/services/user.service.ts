@@ -1,45 +1,91 @@
 // FILE: src/services/user.service.ts
 import { redis } from "../utils/redis";
+import prisma from "../utils/prisma";
 import { nanoid } from "nanoid";
 import { User, ApiKey, Plan, UserStatus, UsageRecord } from "../types/auth.types";
+import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
+
+const JWT_SECRET = process.env.JWT_SECRET || 'default-secret-change-me';
 
 export class UserService {
     /**
      * Create a new user
      */
-    static async createUser(email: string, name?: string, plan: Plan = Plan.FREE): Promise<User> {
-        const userId = nanoid();
-        const user: User = {
-            id: userId,
-            email,
-            name: name || email.split('@')[0],
-            plan,
-            status: UserStatus.ACTIVE,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-        };
+    static async createUser(email: string, password?: string, name?: string, plan: Plan = Plan.FREE): Promise<User> {
+        let passwordHash;
+        if (password) {
+            passwordHash = await bcrypt.hash(password, 10);
+        }
 
-        await redis.set(`user:${userId}`, JSON.stringify(user));
-        await redis.set(`user:email:${email}`, userId);
+        const dbUser = await prisma.user.create({
+            data: {
+                email,
+                name: name || email.split('@')[0],
+                passwordHash,
+                role: 'user',
+                plan,
+                status: 'active',
+            },
+        });
 
-        return user;
+        return this.mapDbUserToUser(dbUser);
+    }
+
+    /**
+     * Validate password
+     */
+    static async validatePassword(user: User, password: string): Promise<boolean> {
+        if (!user.passwordHash) return false;
+        return bcrypt.compare(password, user.passwordHash);
+    }
+
+    /**
+     * Login user and return JWT
+     */
+    static async login(email: string, password: string): Promise<{ user: User; token: string } | null> {
+        const user = await this.getUserByEmail(email);
+        if (!user) return null;
+
+        const isValid = await this.validatePassword(user, password);
+        if (!isValid) return null;
+
+        const token = jwt.sign(
+            { id: user.id, email: user.email, role: user.role },
+            JWT_SECRET,
+            { expiresIn: '24h' }
+        );
+
+        return { user, token };
     }
 
     /**
      * Get user by ID
      */
     static async getUserById(userId: string): Promise<User | null> {
-        const data = await redis.get(`user:${userId}`);
-        return data ? JSON.parse(data) : null;
+        // Try cache first
+        const cached = await redis.get(`user:${userId}`);
+        if (cached) return JSON.parse(cached);
+
+        // Fetch from DB
+        const dbUser = await prisma.user.findUnique({ where: { id: userId } });
+        if (!dbUser) return null;
+
+        const user = this.mapDbUserToUser(dbUser);
+
+        // Cache for 5 minutes
+        await redis.setex(`user:${userId}`, 300, JSON.stringify(user));
+
+        return user;
     }
 
     /**
      * Get user by email
      */
     static async getUserByEmail(email: string): Promise<User | null> {
-        const userId = await redis.get(`user:email:${email}`);
-        if (!userId) return null;
-        return this.getUserById(userId);
+        const dbUser = await prisma.user.findUnique({ where: { email } });
+        if (!dbUser) return null;
+        return this.mapDbUserToUser(dbUser);
     }
 
     /**
@@ -47,27 +93,37 @@ export class UserService {
      */
     static async createApiKey(userId: string, name: string = "Default Key"): Promise<ApiKey> {
         const key = `sk_${nanoid(32)}`;
-        const apiKey: ApiKey = {
-            id: nanoid(),
-            key,
-            name,
-            userId,
-            createdAt: new Date().toISOString(),
-            isActive: true,
-        };
 
-        await redis.set(`apikey:${key}`, JSON.stringify(apiKey));
-        await redis.sadd(`user:${userId}:apikeys`, key);
+        const dbApiKey = await prisma.apiKey.create({
+            data: {
+                key,
+                name,
+                userId,
+                isActive: true,
+            },
+        });
 
-        return apiKey;
+        return this.mapDbApiKeyToApiKey(dbApiKey);
     }
 
     /**
      * Get API key details
      */
     static async getApiKey(key: string): Promise<ApiKey | null> {
-        const data = await redis.get(`apikey:${key}`);
-        return data ? JSON.parse(data) : null;
+        // Try cache first
+        const cached = await redis.get(`apikey:${key}`);
+        if (cached) return JSON.parse(cached);
+
+        // Fetch from DB
+        const dbApiKey = await prisma.apiKey.findUnique({ where: { key } });
+        if (!dbApiKey) return null;
+
+        const apiKey = this.mapDbApiKeyToApiKey(dbApiKey);
+
+        // Cache for 5 minutes
+        await redis.setex(`apikey:${key}`, 300, JSON.stringify(apiKey));
+
+        return apiKey;
     }
 
     /**
@@ -78,8 +134,10 @@ export class UserService {
         if (!apiKey || !apiKey.isActive) return null;
 
         // Update last used timestamp
-        apiKey.lastUsedAt = new Date().toISOString();
-        await redis.set(`apikey:${key}`, JSON.stringify(apiKey));
+        await prisma.apiKey.update({
+            where: { key },
+            data: { lastUsedAt: new Date() },
+        });
 
         return this.getUserById(apiKey.userId);
     }
@@ -93,7 +151,6 @@ export class UserService {
         amount: number = 1
     ): Promise<void> {
         const month = new Date().toISOString().slice(0, 7); // "2024-01"
-        const key = `usage:${userId}:${month}`;
 
         const fieldMap = {
             page: 'pagesScraped',
@@ -101,8 +158,23 @@ export class UserService {
             api: 'apiCalls',
         };
 
-        await redis.hincrby(key, fieldMap[type], amount);
-        await redis.expire(key, 60 * 60 * 24 * 90); // Keep for 90 days
+        // Update or create usage record
+        await prisma.usage.upsert({
+            where: {
+                userId_month: {
+                    userId,
+                    month,
+                },
+            },
+            update: {
+                [fieldMap[type]]: { increment: amount },
+            },
+            create: {
+                userId,
+                month,
+                [fieldMap[type]]: amount,
+            },
+        });
     }
 
     /**
@@ -110,17 +182,34 @@ export class UserService {
      */
     static async getUsage(userId: string): Promise<UsageRecord> {
         const month = new Date().toISOString().slice(0, 7);
-        const key = `usage:${userId}:${month}`;
 
-        const data = await redis.hgetall(key);
+        const dbUsage = await prisma.usage.findUnique({
+            where: {
+                userId_month: {
+                    userId,
+                    month,
+                },
+            },
+        });
+
+        if (!dbUsage) {
+            return {
+                userId,
+                month,
+                pagesScraped: 0,
+                aiExtractions: 0,
+                apiCalls: 0,
+                bandwidthMB: 0,
+            };
+        }
 
         return {
             userId,
             month,
-            pagesScraped: parseInt(data.pagesScraped || '0'),
-            aiExtractions: parseInt(data.aiExtractions || '0'),
-            apiCalls: parseInt(data.apiCalls || '0'),
-            bandwidthMB: parseFloat(data.bandwidthMB || '0'),
+            pagesScraped: dbUsage.pagesScraped,
+            aiExtractions: dbUsage.aiExtractions,
+            apiCalls: dbUsage.apiCalls,
+            bandwidthMB: dbUsage.bandwidthMB,
         };
     }
 
@@ -148,11 +237,17 @@ export class UserService {
      * Revoke API key
      */
     static async revokeApiKey(key: string): Promise<boolean> {
-        const apiKey = await this.getApiKey(key);
+        const apiKey = await prisma.apiKey.findUnique({ where: { key } });
         if (!apiKey) return false;
 
-        apiKey.isActive = false;
-        await redis.set(`apikey:${key}`, JSON.stringify(apiKey));
+        await prisma.apiKey.update({
+            where: { key },
+            data: { isActive: false },
+        });
+
+        // Invalidate cache
+        await redis.del(`apikey:${key}`);
+
         return true;
     }
 
@@ -160,14 +255,43 @@ export class UserService {
      * List all API keys for user
      */
     static async listApiKeys(userId: string): Promise<ApiKey[]> {
-        const keys = await redis.smembers(`user:${userId}:apikeys`);
-        const apiKeys: ApiKey[] = [];
+        const dbApiKeys = await prisma.apiKey.findMany({
+            where: { userId },
+            orderBy: { createdAt: 'desc' },
+        });
 
-        for (const key of keys) {
-            const apiKey = await this.getApiKey(key);
-            if (apiKey) apiKeys.push(apiKey);
-        }
+        return dbApiKeys.map(this.mapDbApiKeyToApiKey);
+    }
 
-        return apiKeys;
+    /**
+     * Helper: Map Prisma User to User type
+     */
+    private static mapDbUserToUser(dbUser: any): User {
+        return {
+            id: dbUser.id,
+            email: dbUser.email,
+            name: dbUser.name,
+            passwordHash: dbUser.passwordHash,
+            role: dbUser.role as 'admin' | 'user',
+            plan: dbUser.plan as Plan,
+            status: dbUser.status as UserStatus,
+            createdAt: dbUser.createdAt.toISOString(),
+            updatedAt: dbUser.updatedAt.toISOString(),
+        };
+    }
+
+    /**
+     * Helper: Map Prisma ApiKey to ApiKey type
+     */
+    private static mapDbApiKeyToApiKey(dbApiKey: any): ApiKey {
+        return {
+            id: dbApiKey.id,
+            key: dbApiKey.key,
+            name: dbApiKey.name,
+            userId: dbApiKey.userId,
+            lastUsedAt: dbApiKey.lastUsedAt?.toISOString(),
+            createdAt: dbApiKey.createdAt.toISOString(),
+            isActive: dbApiKey.isActive,
+        };
     }
 }

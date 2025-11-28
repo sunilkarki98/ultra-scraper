@@ -9,13 +9,17 @@ import {
 import { optionalAuth } from "../middlewares/auth.middleware";
 import { rateLimitByPlan } from "../middlewares/rateLimit.middleware";
 import { checkQuota } from "../middlewares/quota.middleware";
-import userRoutes from "./routes/user.routes";
 import adminRoutes from "./routes/admin.routes";
+import userRoutes from "./routes/user.routes";
+import authRoutes from "./routes/auth.routes";
 
 const router = Router();
 
 // Health Check
 router.get("/health", (req, res) => res.json({ status: "ok" }));
+
+// Auth Routes (Google OAuth)
+router.use("/auth", authRoutes);
 
 // Admin Routes
 router.use("/admin", adminRoutes);

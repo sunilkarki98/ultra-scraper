@@ -17,6 +17,8 @@ export interface User {
     id: string;
     email: string;
     name?: string;
+    passwordHash?: string; // Optional for now to support legacy
+    role: 'admin' | 'user';
     plan: Plan;
     status: UserStatus;
     createdAt: string;

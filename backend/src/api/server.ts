@@ -2,9 +2,6 @@
 import express from "express";
 import cors from "cors";
 import bodyParser from "body-parser";
-import { createBullBoard } from "@bull-board/api";
-import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
-import { ExpressAdapter } from "@bull-board/express";
 
 import config from "../config";
 import { logger } from "../utils/logger";
@@ -15,21 +12,11 @@ import apiRoutes from "./routes";
 
 const app = express();
 
-// 1. Global Middleware
+// 1. Enable CORS
 app.use(cors());
+
+// 2. Parse Body
 app.use(bodyParser.json());
-
-// 2. Dashboard Setup
-const serverAdapter = new ExpressAdapter();
-serverAdapter.setBasePath("/admin/queues");
-createBullBoard({
-  queues: [new BullMQAdapter(scrapeQueue)],
-  serverAdapter: serverAdapter,
-});
-app.use("/admin/queues", serverAdapter.getRouter());
-
-// 2.5. Serve static files (admin dashboard)
-app.use(express.static("public"));
 
 // 3. Mount API Routes
 app.use("/", apiRoutes);
