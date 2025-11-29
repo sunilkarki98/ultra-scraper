@@ -3,6 +3,7 @@ import { BrowserContext, Page } from "playwright";
 import { BrowserManager } from "../browser/BrowserManager";
 import { ScrapeOptions } from "./universalScraper"; // Ensure this matches your types
 import { logger } from "../utils/logger";
+import { ProxyService } from "../common/proxy/proxy.service";
 import fs from "fs";
 import path from "path";
 
@@ -24,6 +25,8 @@ export abstract class BaseScraper<T = any> {
   protected page: Page | null = null;
   protected context: BrowserContext | null = null;
 
+  constructor(protected proxyService?: ProxyService) { }
+
   // Configuration for retries
   protected MAX_RETRIES = 2;
   protected TIMEOUT_MS = 30000;
@@ -32,10 +35,16 @@ export abstract class BaseScraper<T = any> {
    * Main Orchestrator: Handles Lifecycle, Error Recovery, and Metrics
    */
   async run(options: ScrapeOptions): Promise<ScrapeResult<T>> {
-    const { url, proxy, userAgent, mobile } = options;
+    let { url, proxy, userAgent, mobile } = options;
     const startTime = Date.now();
     let attempt = 0;
     let lastError: Error | null = null;
+    let currentProxy = proxy;
+
+    // Get a proxy from rotator if none provided
+    if (!currentProxy && this.proxyService) {
+      currentProxy = this.proxyService.getNext();
+    }
 
     // 🔄 RETRY LOOP
     while (attempt <= this.MAX_RETRIES) {
@@ -47,7 +56,7 @@ export abstract class BaseScraper<T = any> {
         }
 
         const { context, page } = await BrowserManager.launchContext({
-          proxy,
+          proxy: currentProxy,
           userAgent,
           mobile,
         });
@@ -71,6 +80,9 @@ export abstract class BaseScraper<T = any> {
         const data = await this.scrape(options);
 
         // 5. Success!
+        if (currentProxy && this.proxyService) {
+          this.proxyService.reportSuccess(currentProxy);
+        }
         return {
           success: true,
           data,
@@ -78,13 +90,20 @@ export abstract class BaseScraper<T = any> {
             url,
             timestamp: new Date().toISOString(),
             executionTimeMs: Date.now() - startTime,
-            proxyUsed: proxy,
+            proxyUsed: currentProxy,
             retriesAttempted: attempt,
           },
         };
       } catch (err: any) {
         lastError = err;
         logger.error(`Scrape failed on attempt ${attempt}: ${err.message}`);
+
+        if (currentProxy && this.proxyService) {
+          this.proxyService.reportFailure(currentProxy);
+          // Rotate proxy for next attempt
+          currentProxy = this.proxyService.getNext();
+          logger.info(`Rotated proxy to: ${currentProxy}`);
+        }
 
         // 📸 FORENSICS: Take snapshot on failure
         if (this.page) {
@@ -110,7 +129,7 @@ export abstract class BaseScraper<T = any> {
         url,
         timestamp: new Date().toISOString(),
         executionTimeMs: Date.now() - startTime,
-        proxyUsed: proxy,
+        proxyUsed: currentProxy,
         retriesAttempted: attempt,
       },
     };

@@ -1,0 +1,44 @@
+
+> frontend@0.1.0 lint
+> eslint
+
+
+/home/cosmic-soul/Desktop/clientpdf/ultra-scraper/frontend/src/app/admin/activity/page.tsx
+  4:22  warning  'ActivityIcon' is defined but never used  @typescript-eslint/no-unused-vars
+
+/home/cosmic-soul/Desktop/clientpdf/ultra-scraper/frontend/src/app/admin/jobs/page.tsx
+   7:5   warning  'Filter' is defined but never used                   @typescript-eslint/no-unused-vars
+  11:5   warning  'ChevronDown' is defined but never used              @typescript-eslint/no-unused-vars
+  21:11  error    Unexpected any. Specify a different type             @typescript-eslint/no-explicit-any
+  36:12  warning  'showFilters' is assigned a value but never used     @typescript-eslint/no-unused-vars
+  36:25  warning  'setShowFilters' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/home/cosmic-soul/Desktop/clientpdf/ultra-scraper/frontend/src/app/admin/page.tsx
+   16:5   warning  'LineChart' is defined but never used                                                                          @typescript-eslint/no-unused-vars
+   17:5   warning  'Line' is defined but never used                                                                               @typescript-eslint/no-unused-vars
+   30:10  warning  'formatDistanceToNow' is defined but never used                                                                @typescript-eslint/no-unused-vars
+   44:11  error    Unexpected any. Specify a different type                                                                       @typescript-eslint/no-explicit-any
+   57:12  warning  'jobs' is assigned a value but never used                                                                      @typescript-eslint/no-unused-vars
+   57:18  warning  'setJobs' is assigned a value but never used                                                                   @typescript-eslint/no-unused-vars
+   58:58  error    Unexpected any. Specify a different type                                                                       @typescript-eslint/no-explicit-any
+   68:8   warning  React Hook useEffect has a missing dependency: 'fetchStats'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  109:8   warning  React Hook useEffect has a missing dependency: 'fetchStats'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/home/cosmic-soul/Desktop/clientpdf/ultra-scraper/frontend/src/app/admin/settings/page.tsx
+  4:22  warning  'SettingsIcon' is defined but never used  @typescript-eslint/no-unused-vars
+
+/home/cosmic-soul/Desktop/clientpdf/ultra-scraper/frontend/src/components/dashboard/user/ApiKeysManager.tsx
+  46:14  warning  'err' is defined but never used  @typescript-eslint/no-unused-vars
+
+/home/cosmic-soul/Desktop/clientpdf/ultra-scraper/frontend/src/hooks/user/useApi.ts
+  29:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+✖ 18 problems (4 errors, 14 warnings)
+
+npm error Lifecycle script `lint` failed with error:
+npm error code 1
+npm error path /home/cosmic-soul/Desktop/clientpdf/ultra-scraper/frontend
+npm error workspace frontend@0.1.0
+npm error location /home/cosmic-soul/Desktop/clientpdf/ultra-scraper/frontend
+npm error command failed
+npm error command sh -c eslint

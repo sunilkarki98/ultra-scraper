@@ -6,6 +6,9 @@ const baseScraper_1 = require("./baseScraper");
 const htmlParser_1 = require("../parsers/htmlParser");
 const logger_1 = require("../utils/logger");
 class UniversalScraper extends baseScraper_1.BaseScraper {
+    constructor(proxyService) {
+        super(proxyService);
+    }
     /**
      * The specific scraping logic.
      * BaseScraper handles the browser, errors, and retries.
@@ -45,6 +48,8 @@ class UniversalScraper extends baseScraper_1.BaseScraper {
         // C. Extract Links & Leads
         const links = this.extractLinks(parser, options.maxLinks || 50);
         const leads = await this.extractLeads(content); // Scan text + mailto links
+        const images = this.extractImages(parser);
+        const videos = this.extractVideos(parser);
         const jsonLd = parser.getJsonLd(); // Get hidden Schema.org data
         // Validation
         if (!title && content.length < 50) {
@@ -57,6 +62,8 @@ class UniversalScraper extends baseScraper_1.BaseScraper {
             content,
             links,
             leads,
+            images,
+            videos,
             jsonLd,
         };
     }
@@ -116,6 +123,81 @@ class UniversalScraper extends baseScraper_1.BaseScraper {
         })
             .filter((l) => l.href && l.href.startsWith("http") && l.text.length > 0)
             .slice(0, limit);
+    }
+    /**
+     * Helper: Extract Images
+     */
+    extractImages(parser) {
+        const baseUrl = this.page?.url() || "";
+        return parser
+            .getList("img", ($el) => {
+            const src = $el.attr("src");
+            const alt = $el.attr("alt") || "";
+            const width = parseInt($el.attr("width") || "0", 10);
+            const height = parseInt($el.attr("height") || "0", 10);
+            if (!src)
+                return null;
+            try {
+                const absoluteUrl = new URL(src, baseUrl).href;
+                // Filter small icons/pixels
+                if ((width > 0 && width < 50) || (height > 0 && height < 50))
+                    return null;
+                return {
+                    src: absoluteUrl,
+                    alt,
+                    width: width || undefined,
+                    height: height || undefined,
+                };
+            }
+            catch (e) {
+                return null;
+            }
+        })
+            .filter((img) => img !== null)
+            .slice(0, 50); // Limit to 50 images
+    }
+    /**
+     * Helper: Extract Videos
+     */
+    extractVideos(parser) {
+        const baseUrl = this.page?.url() || "";
+        // 1. HTML5 Videos
+        const html5Videos = parser.getList("video", ($el) => {
+            const src = $el.attr("src") || $el.find("source").attr("src");
+            const poster = $el.attr("poster");
+            if (!src)
+                return null;
+            try {
+                return {
+                    url: new URL(src, baseUrl).href,
+                    type: 'html5',
+                    poster: poster ? new URL(poster, baseUrl).href : undefined,
+                };
+            }
+            catch (e) {
+                return null;
+            }
+        }).filter((v) => v !== null);
+        // 2. Iframe Embeds (YouTube/Vimeo)
+        const iframeVideos = parser.getList("iframe", ($el) => {
+            const src = $el.attr("src");
+            if (!src)
+                return null;
+            try {
+                const url = new URL(src, baseUrl).href;
+                if (url.includes("youtube.com") || url.includes("youtu.be")) {
+                    return { url, type: 'youtube' };
+                }
+                if (url.includes("vimeo.com")) {
+                    return { url, type: 'vimeo' };
+                }
+                return null;
+            }
+            catch (e) {
+                return null;
+            }
+        }).filter((v) => v !== null);
+        return [...html5Videos, ...iframeVideos];
     }
     /**
      * Helper: Extract Emails, Phones, Socials

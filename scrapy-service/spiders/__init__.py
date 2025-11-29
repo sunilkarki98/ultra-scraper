@@ -1,0 +1,3 @@
+"""
+Spider initialization module
+"""

@@ -6,6 +6,9 @@ const baseScraper_1 = require("./baseScraper");
 const LLMClient_1 = require("../utils/llm/LLMClient");
 const logger_1 = require("../utils/logger");
 class AIScraper extends baseScraper_1.BaseScraper {
+    constructor(proxyService) {
+        super(proxyService);
+    }
     async scrape(options) {
         if (!this.page)
             throw new Error("Browser Page not initialized");

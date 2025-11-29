@@ -3,7 +3,12 @@ import { BaseLLMProvider, LLMResponse } from "./BaseLLMProvider";
 import { logger } from "../logger";
 
 export class OpenAIProvider extends BaseLLMProvider {
-    private readonly baseURL = "https://api.openai.com/v1/chat/completions";
+    private readonly baseURL: string;
+
+    constructor(config: any, baseURL?: string) {
+        super(config);
+        this.baseURL = baseURL || "https://api.openai.com/v1/chat/completions";
+    }
 
     async extract(html: string, prompt: string): Promise<any> {
         const fullPrompt = this.buildPrompt(html, prompt);

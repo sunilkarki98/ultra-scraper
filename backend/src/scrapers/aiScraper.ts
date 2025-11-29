@@ -3,8 +3,12 @@ import { BaseScraper } from "./baseScraper";
 import { ScrapeOptions, ScrapeResult } from "./universalScraper";
 import { LLMClient } from "../utils/llm/LLMClient";
 import { logger } from "../utils/logger";
+import { ProxyService } from "../common/proxy/proxy.service";
 
 export class AIScraper extends BaseScraper<ScrapeResult> {
+    constructor(proxyService?: ProxyService) {
+        super(proxyService);
+    }
     protected async scrape(options: ScrapeOptions): Promise<ScrapeResult> {
         if (!this.page) throw new Error("Browser Page not initialized");
 

@@ -6,7 +6,7 @@ import { GeminiProvider } from "./GeminiProvider";
 import { CustomProvider } from "./CustomProvider";
 import config from "../../config";
 
-export type LLMProviderType = "openai" | "anthropic" | "gemini" | "custom";
+export type LLMProviderType = "openai" | "anthropic" | "gemini" | "custom" | "grok" | "deepseek" | "mistral";
 
 export interface LLMClientConfig extends LLMConfig {
     provider?: LLMProviderType;
@@ -53,6 +53,15 @@ export class LLMClient {
             case "custom":
                 this.provider = new CustomProvider(config);
                 break;
+            case "grok":
+                this.provider = new OpenAIProvider(config, "https://api.x.ai/v1/chat/completions");
+                break;
+            case "deepseek":
+                this.provider = new OpenAIProvider(config, "https://api.deepseek.com/chat/completions");
+                break;
+            case "mistral":
+                this.provider = new OpenAIProvider(config, "https://api.mistral.ai/v1/chat/completions");
+                break;
             default:
                 throw new Error(`Unsupported LLM provider: ${providerType}`);
         }
@@ -69,18 +78,13 @@ export class LLMClient {
      * Detect provider from environment
      */
     private detectProvider(): LLMProviderType {
-        if (process.env.OPENAI_API_KEY || process.env.LLM_PROVIDER === "openai") {
-            return "openai";
-        }
-        if (process.env.ANTHROPIC_API_KEY || process.env.LLM_PROVIDER === "anthropic") {
-            return "anthropic";
-        }
-        if (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.LLM_PROVIDER === "gemini") {
-            return "gemini";
-        }
-        if (process.env.LLM_ENDPOINT || process.env.LLM_PROVIDER === "custom") {
-            return "custom";
-        }
+        if (process.env.OPENAI_API_KEY || process.env.LLM_PROVIDER === "openai") return "openai";
+        if (process.env.ANTHROPIC_API_KEY || process.env.LLM_PROVIDER === "anthropic") return "anthropic";
+        if (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.LLM_PROVIDER === "gemini") return "gemini";
+        if (process.env.GROK_API_KEY || process.env.LLM_PROVIDER === "grok") return "grok";
+        if (process.env.DEEPSEEK_API_KEY || process.env.LLM_PROVIDER === "deepseek") return "deepseek";
+        if (process.env.MISTRAL_API_KEY || process.env.LLM_PROVIDER === "mistral") return "mistral";
+        if (process.env.LLM_ENDPOINT || process.env.LLM_PROVIDER === "custom") return "custom";
 
         // Default to OpenAI if no provider detected
         return "openai";
@@ -97,6 +101,12 @@ export class LLMClient {
                 return process.env.ANTHROPIC_API_KEY || "";
             case "gemini":
                 return process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "";
+            case "grok":
+                return process.env.GROK_API_KEY || "";
+            case "deepseek":
+                return process.env.DEEPSEEK_API_KEY || "";
+            case "mistral":
+                return process.env.MISTRAL_API_KEY || "";
             case "custom":
                 return process.env.LLM_API_KEY || ""; // Optional for local
             default:

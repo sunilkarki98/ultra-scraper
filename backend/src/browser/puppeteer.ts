@@ -7,6 +7,8 @@ import { createCursor } from "ghost-cursor";
 import { logger } from "../utils/logger";
 import config from "../config";
 import { getRandomUserAgent } from "../utils/userAgents";
+import { CaptchaSolver } from "../utils/captchaSolver";
+import { LoginHandler } from "../utils/loginHandler";
 
 // Use plugins
 puppeteer.use(StealthPlugin());
@@ -14,11 +16,21 @@ puppeteer.use(AnonymizeUAPlugin());
 
 export class PuppeteerManager {
   private static browser: Browser | null = null;
+  private static captchaSolver: CaptchaSolver | null = null;
+  private static loginHandler: LoginHandler | null = null;
 
   static async init() {
     if (this.browser) return;
 
     logger.info("🛡️ Launching Puppeteer Stealth Engine (Ultra Mode)...");
+
+    // Initialize helper services
+    if (!this.captchaSolver) {
+      this.captchaSolver = new CaptchaSolver();
+    }
+    if (!this.loginHandler) {
+      this.loginHandler = new LoginHandler();
+    }
 
     // ✅ FIX: strictly boolean. Puppeteer v22+ treats 'true' as the new headless mode.
     const headlessMode: boolean = config.scraping.headless;
@@ -78,7 +90,7 @@ export class PuppeteerManager {
           if (parameter === 37446) return "Intel Iris OpenGL Engine";
           return getParameter.call(this, parameter);
         };
-      } catch (e) {}
+      } catch (e) { }
     });
   }
 
@@ -110,7 +122,7 @@ export class PuppeteerManager {
       ) {
         return req.abort();
       }
-      req.continue().catch(() => {});
+      req.continue().catch(() => { });
     });
   }
 
@@ -122,7 +134,7 @@ export class PuppeteerManager {
         x: Math.floor(Math.random() * 1000) + 100,
         y: Math.floor(Math.random() * 400) + 50,
       });
-    } catch {}
+    } catch { }
 
     await page.evaluate(async () => {
       function sleep(ms: number) {
@@ -148,7 +160,7 @@ export class PuppeteerManager {
     page.on("error", async () => {
       try {
         if (!page.isClosed()) await page.close();
-      } catch {}
+      } catch { }
     });
 
     if (proxy) {
@@ -203,7 +215,7 @@ export class PuppeteerManager {
       logger.error(`Puppeteer Failed: ${error}`);
       try {
         if (!page.isClosed()) await page.close();
-      } catch {}
+      } catch { }
       throw error;
     }
   }
@@ -211,7 +223,37 @@ export class PuppeteerManager {
   static async closePage(page: Page) {
     try {
       if (page && !page.isClosed()) await page.close();
-    } catch (e) {}
+    } catch (e) { }
+  }
+
+  /**
+   * Solve captcha on a page
+   */
+  static async solveCaptcha(page: Page, url: string): Promise<boolean> {
+    if (!this.captchaSolver) {
+      this.captchaSolver = new CaptchaSolver();
+    }
+    return this.captchaSolver.handleCaptcha(page, url);
+  }
+
+  /**
+   * Perform login on a page
+   */
+  static async handleLogin(page: Page, credentials: any): Promise<any> {
+    if (!this.loginHandler) {
+      this.loginHandler = new LoginHandler();
+    }
+    return this.loginHandler.login(page, credentials);
+  }
+
+  /**
+   * Load saved session cookies
+   */
+  static async loadSession(page: Page, cookies: any[]): Promise<void> {
+    if (!this.loginHandler) {
+      this.loginHandler = new LoginHandler();
+    }
+    return this.loginHandler.loadSession(page, cookies);
   }
 
   static async shutdownBrowser() {

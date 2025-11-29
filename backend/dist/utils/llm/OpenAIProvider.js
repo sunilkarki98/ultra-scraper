@@ -5,7 +5,11 @@ exports.OpenAIProvider = void 0;
 const BaseLLMProvider_1 = require("./BaseLLMProvider");
 const logger_1 = require("../logger");
 class OpenAIProvider extends BaseLLMProvider_1.BaseLLMProvider {
-    baseURL = "https://api.openai.com/v1/chat/completions";
+    baseURL;
+    constructor(config, baseURL) {
+        super(config);
+        this.baseURL = baseURL || "https://api.openai.com/v1/chat/completions";
+    }
     async extract(html, prompt) {
         const fullPrompt = this.buildPrompt(html, prompt);
         const response = await this.callAPI(fullPrompt);

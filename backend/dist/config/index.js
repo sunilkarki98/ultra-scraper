@@ -8,7 +8,7 @@ const dotenv_1 = __importDefault(require("dotenv"));
 const zod_1 = require("zod");
 const path_1 = __importDefault(require("path"));
 const calculateConcurrency_1 = require("../utils/calculateConcurrency");
-const envHelpers_1 = require("../utils/envHelpers"); // 👈 Imported here
+const envHelpers_1 = require("../utils/envHelpers");
 dotenv_1.default.config();
 // -----------------------------
 // 🔧 Resource-based concurrency
@@ -53,6 +53,11 @@ const configSchema = zod_1.z.object({
         maxMemoryMb: zod_1.z.number().optional(),
         utilizationPct: zod_1.z.number().default(80),
     }),
+    scrapy: zod_1.z.object({
+        enabled: zod_1.z.boolean().default(true),
+        serviceUrl: zod_1.z.string().default('http://localhost:8001'),
+        timeout: zod_1.z.number().default(30000),
+    }),
 });
 // -----------------------------
 // 📌 Raw Config (Environment)
@@ -88,6 +93,11 @@ const rawConfig = {
         maxMemoryMb: (0, envHelpers_1.parseNumber)(process.env.MAX_MEMORY_MB),
         utilizationPct: (0, envHelpers_1.parseNumber)(process.env.RESOURCE_UTILIZATION_PCT, 80),
     },
+    scrapy: {
+        enabled: (0, envHelpers_1.parseBool)(process.env.SCRAPY_ENABLED, true),
+        serviceUrl: process.env.SCRAPY_SERVICE_URL,
+        timeout: (0, envHelpers_1.parseNumber)(process.env.SCRAPY_TIMEOUT, 30000),
+    },
 };
 // -----------------------------
 // 🔍 Validate & Build Final Config
@@ -101,11 +111,9 @@ if (config.env === "production" && process.env.FORCE_HEADFUL !== "true") {
 // 📊 Audit Logs
 // -----------------------------
 if (process.env.MAX_MEMORY_MB || process.env.MAX_CPU_CORES) {
-    console.log("");
-    console.log(`⚖️ Resource Audit (${config.scraping.utilizationPct}% Utilization):`);
-    console.log(`   • RAM Limit: ${process.env.MAX_MEMORY_MB || "Auto"} MB`);
-    console.log(`   • CPU Limit: ${process.env.MAX_CPU_CORES || "Auto"} cores`);
-    console.log(`   • Calculated Safe Concurrency: ${config.scraping.concurrency}`);
-    console.log("");
+    console.log(`Resource Audit (${config.scraping.utilizationPct}% Utilization):`);
+    console.log(`  RAM Limit: ${process.env.MAX_MEMORY_MB || "Auto"} MB`);
+    console.log(`  CPU Limit: ${process.env.MAX_CPU_CORES || "Auto"} cores`);
+    console.log(`  Calculated Safe Concurrency: ${config.scraping.concurrency}`);
 }
 exports.default = config;

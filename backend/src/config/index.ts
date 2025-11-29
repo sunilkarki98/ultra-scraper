@@ -3,7 +3,9 @@ import dotenv from "dotenv";
 import { z } from "zod";
 import path from "path";
 import { calculateConcurrency } from "../utils/calculateConcurrency";
-import { parseBool, parseNumber } from "../utils/envHelpers"; // 👈 Imported here
+import { parseBool, parseNumber } from "../utils/envHelpers";
+
+
 
 dotenv.config();
 
@@ -57,6 +59,12 @@ const configSchema = z.object({
     maxMemoryMb: z.number().optional(),
     utilizationPct: z.number().default(80),
   }),
+
+  scrapy: z.object({
+    enabled: z.boolean().default(true),
+    serviceUrl: z.string().default('http://localhost:8001'),
+    timeout: z.number().default(30000),
+  }),
 });
 
 // -----------------------------
@@ -99,6 +107,12 @@ const rawConfig = {
     maxMemoryMb: parseNumber(process.env.MAX_MEMORY_MB),
     utilizationPct: parseNumber(process.env.RESOURCE_UTILIZATION_PCT, 80),
   },
+
+  scrapy: {
+    enabled: parseBool(process.env.SCRAPY_ENABLED, true),
+    serviceUrl: process.env.SCRAPY_SERVICE_URL,
+    timeout: parseNumber(process.env.SCRAPY_TIMEOUT, 30000),
+  },
 };
 
 // -----------------------------
@@ -115,16 +129,10 @@ if (config.env === "production" && process.env.FORCE_HEADFUL !== "true") {
 // 📊 Audit Logs
 // -----------------------------
 if (process.env.MAX_MEMORY_MB || process.env.MAX_CPU_CORES) {
-  console.log("");
-  console.log(
-    `⚖️ Resource Audit (${config.scraping.utilizationPct}% Utilization):`
-  );
-  console.log(`   • RAM Limit: ${process.env.MAX_MEMORY_MB || "Auto"} MB`);
-  console.log(`   • CPU Limit: ${process.env.MAX_CPU_CORES || "Auto"} cores`);
-  console.log(
-    `   • Calculated Safe Concurrency: ${config.scraping.concurrency}`
-  );
-  console.log("");
+  console.log(`Resource Audit (${config.scraping.utilizationPct}% Utilization):`);
+  console.log(`  RAM Limit: ${process.env.MAX_MEMORY_MB || "Auto"} MB`);
+  console.log(`  CPU Limit: ${process.env.MAX_CPU_CORES || "Auto"} cores`);
+  console.log(`  Calculated Safe Concurrency: ${config.scraping.concurrency}`);
 }
 
 export type Config = z.infer<typeof configSchema>;

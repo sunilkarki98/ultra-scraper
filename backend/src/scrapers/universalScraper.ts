@@ -2,6 +2,7 @@
 import { BaseScraper } from "./baseScraper";
 import { HtmlParser } from "../parsers/htmlParser";
 import { logger } from "../utils/logger";
+import { ProxyService } from "../common/proxy/proxy.service";
 
 // Define ScrapeOptions (If not already in a shared types file)
 export interface ScrapeOptions {
@@ -23,6 +24,34 @@ export interface ScrapeOptions {
   // AI/LLM Extraction Options
   useAI?: boolean;
   aiPrompt?: string;
+
+  // Content Selectors (for URL scrape filtering)
+  contentSelectors?: {
+    emails?: boolean;
+    phones?: boolean;
+    text?: boolean;
+    links?: boolean;
+    images?: boolean;
+    videos?: boolean;
+    tables?: boolean;
+  };
+
+  // Dual-Mode Options
+  mode?: 'simple' | 'advanced';
+  workflow?: 'scraper-only' | 'scraper-llm' | 'llm-only';
+  outputFormat?: 'text' | 'json' | 'markdown' | 'xml';
+
+  llmConfig?: {
+    provider: string;
+    model: string;
+    apiKey?: string;
+    endpoint?: string;
+    temperature?: number;
+    maxTokens?: number;
+    systemPrompt?: string;
+  };
+
+  // Legacy/Direct Options (kept for backward compatibility)
   llmProvider?: "openai" | "anthropic" | "gemini" | "custom";
   llmApiKey?: string;
   llmModel?: string;
@@ -41,10 +70,24 @@ export interface ScrapeResult {
     phones: string[];
     socialLinks: string[];
   };
+  images?: {
+    src: string;
+    alt?: string;
+    width?: number;
+    height?: number;
+  }[];
+  videos?: {
+    url: string;
+    type: 'html5' | 'youtube' | 'vimeo' | 'other';
+    poster?: string;
+  }[];
   jsonLd: any[]; // Structured data (Schema.org)
 }
 
 export class UniversalScraper extends BaseScraper<ScrapeResult> {
+  constructor(proxyService?: ProxyService) {
+    super(proxyService);
+  }
   /**
    * The specific scraping logic.
    * BaseScraper handles the browser, errors, and retries.
@@ -98,6 +141,8 @@ export class UniversalScraper extends BaseScraper<ScrapeResult> {
     // C. Extract Links & Leads
     const links = this.extractLinks(parser, options.maxLinks || 50);
     const leads = await this.extractLeads(content); // Scan text + mailto links
+    const images = this.extractImages(parser);
+    const videos = this.extractVideos(parser);
     const jsonLd = parser.getJsonLd(); // Get hidden Schema.org data
 
     // Validation
@@ -112,6 +157,8 @@ export class UniversalScraper extends BaseScraper<ScrapeResult> {
       content,
       links,
       leads,
+      images,
+      videos,
       jsonLd,
     };
   }
@@ -172,6 +219,85 @@ export class UniversalScraper extends BaseScraper<ScrapeResult> {
       })
       .filter((l) => l.href && l.href.startsWith("http") && l.text.length > 0)
       .slice(0, limit);
+  }
+
+  /**
+   * Helper: Extract Images
+   */
+  private extractImages(parser: HtmlParser) {
+    const baseUrl = this.page?.url() || "";
+    return parser
+      .getList("img", ($el) => {
+        const src = $el.attr("src");
+        const alt = $el.attr("alt") || "";
+        const width = parseInt($el.attr("width") || "0", 10);
+        const height = parseInt($el.attr("height") || "0", 10);
+
+        if (!src) return null;
+
+        try {
+          const absoluteUrl = new URL(src, baseUrl).href;
+          // Filter small icons/pixels
+          if ((width > 0 && width < 50) || (height > 0 && height < 50)) return null;
+
+          return {
+            src: absoluteUrl,
+            alt,
+            width: width || undefined,
+            height: height || undefined,
+          };
+        } catch (e) {
+          return null;
+        }
+      })
+      .filter((img): img is NonNullable<typeof img> => img !== null)
+      .slice(0, 50); // Limit to 50 images
+  }
+
+  /**
+   * Helper: Extract Videos
+   */
+  private extractVideos(parser: HtmlParser) {
+    const baseUrl = this.page?.url() || "";
+
+    // 1. HTML5 Videos
+    const html5Videos = parser.getList("video", ($el) => {
+      const src = $el.attr("src") || $el.find("source").attr("src");
+      const poster = $el.attr("poster");
+
+      if (!src) return null;
+
+      try {
+        return {
+          url: new URL(src, baseUrl).href,
+          type: 'html5' as const,
+          poster: poster ? new URL(poster, baseUrl).href : undefined,
+        };
+      } catch (e) {
+        return null;
+      }
+    }).filter((v): v is NonNullable<typeof v> => v !== null);
+
+    // 2. Iframe Embeds (YouTube/Vimeo)
+    const iframeVideos = parser.getList("iframe", ($el) => {
+      const src = $el.attr("src");
+      if (!src) return null;
+
+      try {
+        const url = new URL(src, baseUrl).href;
+        if (url.includes("youtube.com") || url.includes("youtu.be")) {
+          return { url, type: 'youtube' as const };
+        }
+        if (url.includes("vimeo.com")) {
+          return { url, type: 'vimeo' as const };
+        }
+        return null;
+      } catch (e) {
+        return null;
+      }
+    }).filter((v): v is NonNullable<typeof v> => v !== null);
+
+    return [...html5Videos, ...iframeVideos];
   }
 
   /**

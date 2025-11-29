@@ -21,8 +21,15 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  // LLM API Keys (encrypted)
+  openaiApiKey     String?
+  anthropicApiKey  String?
+  geminiApiKey     String?
+
   apiKeys      ApiKey[]
   usage        Usage[]
+  webhooks     Webhook[]
+  jobs         Job[]
 }
 
 model ApiKey {
@@ -47,4 +54,32 @@ model Usage {
   bandwidthMB   Float    @default(0)
 
   @@unique([userId, month])
+}
+
+model Webhook {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  url       String
+  events    String[] // ["scrape.completed", "scrape.failed"]
+  secret    String   // For HMAC signature
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Job {
+  id          String   @id @default(uuid())
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id])
+  url         String
+  status      String   // "pending", "processing", "completed", "failed"
+  result      Json?
+  error       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId, createdAt])  // Speed up getUserJobs query
+  @@index([status])              // Speed up admin queries by status
+  @@index([createdAt])           // Speed up time-based queries
 }

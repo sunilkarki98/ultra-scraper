@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  # 1. The Brain (API)
+  api:
+    build: ./backend
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'    # Limit to 1 CPU core
+          memory: 1G     # Limit to 1GB RAM
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # 2. The Muscle (Worker)
+  worker:
+    build: ./backend
+    command: npm run worker
+    deploy:
+      mode: replicated
+      replicas: 2        # Start with 2 workers
+      resources:
+        limits:
+          cpus: '2.0'    # Workers need more CPU for Chrome
+          memory: 4G     # Chrome is RAM hungry (approx 1GB per concurrent tab)
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+    environment:
+      - CONCURRENCY_PER_WORKER=5 # 5 tabs per worker container
+
+  # 3. The Queue (Redis)
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  # 4. The Database (Postgres)
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_PASSWORD: securepassword
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+
+volumes:
+  pgdata:

@@ -20,10 +20,15 @@
         "docker:up": "docker-compose -f backend/docker-compose.production.yml up -d"
     },
     "devDependencies": {
+        "baseline-browser-mapping": "^2.8.32",
         "concurrently": "^8.2.2"
     },
     "engines": {
         "node": ">=20.0.0",
         "npm": ">=9.0.0"
+    },
+    "dependencies": {
+        "react": "^19.2.0",
+        "react-dom": "^19.2.0"
     }
 }

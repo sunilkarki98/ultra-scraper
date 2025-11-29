@@ -9,8 +9,12 @@ const logger_1 = require("../utils/logger");
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 class BaseScraper {
+    proxyService;
     page = null;
     context = null;
+    constructor(proxyService) {
+        this.proxyService = proxyService;
+    }
     // Configuration for retries
     MAX_RETRIES = 2;
     TIMEOUT_MS = 30000;
@@ -18,10 +22,15 @@ class BaseScraper {
      * Main Orchestrator: Handles Lifecycle, Error Recovery, and Metrics
      */
     async run(options) {
-        const { url, proxy, userAgent, mobile } = options;
+        let { url, proxy, userAgent, mobile } = options;
         const startTime = Date.now();
         let attempt = 0;
         let lastError = null;
+        let currentProxy = proxy;
+        // Get a proxy from rotator if none provided
+        if (!currentProxy && this.proxyService) {
+            currentProxy = this.proxyService.getNext();
+        }
         // 🔄 RETRY LOOP
         while (attempt <= this.MAX_RETRIES) {
             try {
@@ -31,7 +40,7 @@ class BaseScraper {
                     await this.randomDelay(2000 * attempt); // Exponential backoff
                 }
                 const { context, page } = await BrowserManager_1.BrowserManager.launchContext({
-                    proxy,
+                    proxy: currentProxy,
                     userAgent,
                     mobile,
                 });
@@ -51,6 +60,9 @@ class BaseScraper {
                 // 4. Execute Specific Scraper Logic
                 const data = await this.scrape(options);
                 // 5. Success!
+                if (currentProxy && this.proxyService) {
+                    this.proxyService.reportSuccess(currentProxy);
+                }
                 return {
                     success: true,
                     data,
@@ -58,7 +70,7 @@ class BaseScraper {
                         url,
                         timestamp: new Date().toISOString(),
                         executionTimeMs: Date.now() - startTime,
-                        proxyUsed: proxy,
+                        proxyUsed: currentProxy,
                         retriesAttempted: attempt,
                     },
                 };
@@ -66,6 +78,12 @@ class BaseScraper {
             catch (err) {
                 lastError = err;
                 logger_1.logger.error(`Scrape failed on attempt ${attempt}: ${err.message}`);
+                if (currentProxy && this.proxyService) {
+                    this.proxyService.reportFailure(currentProxy);
+                    // Rotate proxy for next attempt
+                    currentProxy = this.proxyService.getNext();
+                    logger_1.logger.info(`Rotated proxy to: ${currentProxy}`);
+                }
                 // 📸 FORENSICS: Take snapshot on failure
                 if (this.page) {
                     await this.saveDebugSnapshot(url, attempt);
@@ -87,7 +105,7 @@ class BaseScraper {
                 url,
                 timestamp: new Date().toISOString(),
                 executionTimeMs: Date.now() - startTime,
-                proxyUsed: proxy,
+                proxyUsed: currentProxy,
                 retriesAttempted: attempt,
             },
         };
